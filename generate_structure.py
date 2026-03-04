@@ -56,7 +56,7 @@ def create_structure():
                 with open(file_path, "w") as f:
                     f.write("")
 
-    print("Project structure created successfully!")
+    print("project structure created")
 
 
 if __name__ == "__main__":

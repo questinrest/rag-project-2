@@ -14,6 +14,7 @@ client = MongoClient(CONNECTION_STRING, tlsCAFile=certifi.where())
 DATABASE_NAME = "devRAG"
 db = client[DATABASE_NAME]
 login_collection = db['devlogins']
+document_collection = db['document_collection']
 
 # JWT Auth
 SECRET_KEY = os.getenv("SECRET_KEY", "b0954062d03562f160495c9263993d2f425c84e627a1c20a33ff18a602f56bdc")

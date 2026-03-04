@@ -8,9 +8,9 @@ This project implements a Retrieval-Augmented Generation (RAG) system with:
 - ✅ JWT-based authentication (HTTPBearer)
 - ✅ Namespace isolation in Pinecone (per-user)
 - ✅ Parent-child document chunking
-- ✅ Document ingestion with duplicate detection
+- ✅ Automated document versioning & archiving (MongoDB)
 - 🔲 Multi-tier caching (Exact, Semantic, Retrieval)
-- ✅ Retrieval with optional reranking
+- ✅ Retrieval with metadata filtering & optional reranking
 - ✅ LLM-based answer generation
 
 ---
@@ -66,10 +66,12 @@ flowchart TB
 
     UPLOAD --> CHUNK
     CHUNK --> EMBED
+    EMBED --> MONGO
     EMBED --> PINE
 
     QRY --> CACHE
     CACHE --> RET
+    RET --> MONGO
     RET --> PINE
     RET --> GEN
     GEN --> LLM
@@ -127,20 +129,23 @@ flowchart TD
     G -- No --> H["400: Unsupported file type"]
     G -- Yes --> I["Save file to uploads/"]
 
-    I --> J["Parent-child chunking pipeline"]
+    I --> J["Chunking Pipeline"]
 
-    subgraph CHUNKING["Chunking Pipeline"]
-        J --> K["Load document via PyMuPDF/TextLoader"]
-        K --> L["Split into parent chunks"]
-        L --> M["Split parents into child chunks"]
-        M --> N["Map children to parent IDs"]
-        N --> O["Compute SHA256 file hash"]
+    subgraph CHUNKING["Chunking"]
+        J --> K["Load doc"]
+        K --> L["Parent-child split"]
+        L --> M["Compute SHA256 Hash"]
     end
 
-    O --> P{"Duplicate hash in namespace?"}
-    P -- Yes --> Q["Return: Document already exists"]
-    P -- No --> R["Batch upsert to Pinecone"]
-    R --> S["Return: Success + chunks_inserted count"]
+    M --> N{"Active file with same name exists?"}
+    N -- Yes --> O{"Hash matches?"}
+    O -- Yes --> P["Return: Already up to date"]
+    O -- No --> Q["Mark old version inactive in MongoDB"]
+    Q --> R["Create new version record"]
+    N -- No --> R
+
+    R --> S["Batch upsert to Pinecone with new document_id"]
+    S --> T["Return: Success"]
 ```
 
 **Implemented in:** `api/ingestion/route.py`, `src/chunking/parent_child.py`, `src/embedding/embed.py`
@@ -153,14 +158,6 @@ flowchart TD
 | Child chunk size | 200 |
 | Child chunk overlap | 20 |
 
-### Pinecone Configuration
-| Setting | Value |
-|---------|-------|
-| Index name | devrag |
-| Embedding model | llama-text-embed-v2 |
-| Cloud | AWS (us-east-1) |
-| Batch size | 96 |
-
 ---
 
 # 4. Query Pipeline ✅
@@ -172,14 +169,13 @@ flowchart TD
     C -->|Hit| D["Return Cached Answer"]
     C -->|Miss| E["Semantic Cache - Tier 2"]
     E -->|Hit| D
-    E -->|Miss| F["Retrieval Cache - Tier 3"]
-    F -->|Hit| D
-    F -->|Miss| G{"Rerank Enabled?"}
 
-    G -- Yes --> H["Retrieve + Rerank"]
-    G -- No --> I["Retrieve Top-K"]
-
-    H --> J["Build Context from Parent Chunks"]
+    E -->|Miss| F["Fetch Active Document IDs from MongoDB"]
+    F --> G["Search Pinecone with metadata filter: document_id IN active_ids"]
+    
+    G --> H{"Rerank Enabled?"}
+    H -- Yes --> I["Rerank results"]
+    H -- No --> J["Build Context"]
     I --> J
 
     J --> K["Generate Answer via LLM"]
@@ -188,7 +184,6 @@ flowchart TD
 
     style C fill:#333,stroke:#888,stroke-dasharray: 5 5
     style E fill:#333,stroke:#888,stroke-dasharray: 5 5
-    style F fill:#333,stroke:#888,stroke-dasharray: 5 5
     style L fill:#333,stroke:#888,stroke-dasharray: 5 5
 ```
 
@@ -202,11 +197,20 @@ erDiagram
         ObjectId _id PK
         string username
         string hashed_password
-        boolean namespace
+    }
+
+    DOCUMENT_COLLECTION {
+        string document_id PK
+        string filename
+        string namespace
+        string source_hash
+        datetime uploaded_at
+        boolean is_active
     }
 
     PINECONE_RECORDS {
         string _id PK
+        string document_id FK
         string chunk_text
         string parent_id
         string source
@@ -215,31 +219,31 @@ erDiagram
         vector embedding
     }
 
-    DEVLOGINS ||--o{ PINECONE_RECORDS : "namespace = username"
+    DEVLOGINS ||--o{ DOCUMENT_COLLECTION : "namespace = username"
+    DOCUMENT_COLLECTION ||--o{ PINECONE_RECORDS : "document_id"
 ```
 
 ### Storage Responsibilities
 
-| Store | Technology | Status |
+| Store | Technology | Purpose |
 |-------|-----------|--------|
-| User credentials | MongoDB Atlas (`devlogins`) | ✅ Implemented |
-| Vector chunks | Pinecone (`devrag` index) | ✅ Implemented |
-| Cached responses | Redis | 🔲 Planned |
-| LLM generation | Groq API | ✅ Implemented |
+| User credentials | MongoDB Atlas (`devlogins`) | Auth & Namespace mapping |
+| Document tracking | MongoDB Atlas (`document_collection`) | Version control & active filters |
+| Vector chunks | Pinecone (`devrag` index) | Semantic search |
+| Cached responses | Redis | Performance optimization |
+| LLM generation | Groq API | RAG answer generation |
 
 ---
 
 # 6. Module Status
 
-| Module | Files | Status |
-|--------|-------|--------|
-| `api/auth/` | route, services, datamodels | ✅ Implemented |
-| `api/ingestion/` | route, services, datamodels | ✅ Implemented |
-| `src/config.py` | MongoDB, Pinecone, JWT config | ✅ Implemented |
-| `src/chunking/` | parent_child.py | ✅ Implemented |
-| `src/embedding/` | embed.py | ✅ Implemented |
-| `src/caching/` | exact_cache, semantic_cache, retrieval_cache | 🔲 Empty stubs |
-| `src/retrieval/` | retriever, reranker | ✅ Implemented |
-| `src/generation/` | generator | ✅ Implemented |
-| `src/database/` | models, crud, connection | 🔲 Empty stubs |
-| `src/utils/` | embeddings, logger | 🔲 Empty stubs |
+| Module | Status |
+|--------|--------|
+| `api/auth/` | ✅ Implemented |
+| `api/ingestion/` | ✅ Document versioning implemented |
+| `src/config.py` | ✅ MongoDB, Pinecone, JWT config |
+| `src/chunking/` | ✅ Parent-child implemented |
+| `src/embedding/` | ✅ Pinecone management |
+| `src/retrieval/` | ✅ Filtering & Reranking implemented |
+| `src/generation/` | ✅ Groq integration |
+| `src/caching/` | 🔲 Planned |
