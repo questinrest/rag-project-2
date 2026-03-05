@@ -209,19 +209,19 @@ erDiagram
         boolean is_active
     }
 
-    PINECONE_RECORDS {
+    PINECONE_INDEX_METADATA {
         string _id PK
         string document_id FK
         string chunk_text
         string parent_id (optional)
         string source
-        int page
+        int page (optional)
         string source_hash_value
         vector embedding
     }
 
     DEVLOGINS ||--o{ DOCUMENT_COLLECTION : "namespace = username"
-    DOCUMENT_COLLECTION ||--o{ PINECONE_RECORDS : "document_id"
+    DOCUMENT_COLLECTION ||--o{ PINECONE_INDEX_METADATA : "document_id (Metadata Filter)"
 ```
 
 ### Storage Responsibilities
@@ -229,8 +229,8 @@ erDiagram
 | Store | Technology | Purpose |
 |-------|-----------|--------|
 | User credentials | MongoDB Atlas (`devlogins`) | Auth & Namespace mapping |
-| Document tracking | MongoDB Atlas (`document_collection`) | Version control & active filters |
-| Vector chunks | Pinecone (`devrag` index) | Semantic search |
+| Document tracking | MongoDB Atlas (`document_collection`) | Version control & active filters (Fetched during Retrieval Phase) |
+| Vector chunks | Pinecone (`devrag` index) | Semantic search with MongoDB ID Filtering |
 | Cached responses | Redis | Performance optimization |
 | LLM generation | Groq API | RAG answer generation |
 

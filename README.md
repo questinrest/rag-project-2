@@ -73,7 +73,7 @@ flowchart TB
 | **Document Versioning & Archiving** | ✅ |
 | Pinecone vector upsert with metadata filtering | ✅ |
 | Duplicate document detection (SHA256) | ✅ |
-| Retrieval with optional reranking | ✅ |
+| Retrieval with MongoDB active document filtering & optional Pinecone reranking | ✅ |
 | LLM-based answer generation (Groq) | ✅ |
 
 ## Tech Stack
@@ -110,7 +110,7 @@ flowchart TB
 │   ├── config.py            # MongoDB & Pinecone setup
 │   ├── chunking/            # Configurable splitting logic (Parent-Child / Recursive Character)
 │   ├── embedding/           # Pinecone indexing
-│   ├── retrieval/           # Filtered retrieval & reranking
+│   ├── retrieval/           # MongoDB active doc filtering & Pinecone Reranking
 │   └── generation/          # Groq LLM integration
 └── docs/
     └── architecture.md      # Detailed diagrams & flowcharts
