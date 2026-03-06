@@ -14,7 +14,6 @@ def get_retrieval_cache(
     namespace_cache = _RETRIEVAL_CACHE.get(namespace, [])
     if not namespace_cache:
         return None
-
     query_emb = get_embedding(query)
 
     best_match = None

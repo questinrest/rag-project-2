@@ -32,16 +32,13 @@ def get_semantic_cache(
         return None
 
     query_emb = get_embedding(query)
-
     best_match = None
     highest_sim = -1.0
-
     for cached_item in namespace_cache:
         sim = cosine_similarity(query_emb, cached_item["embedding"])
         if sim > highest_sim:
             highest_sim = sim
             best_match = cached_item
-
     if best_match and highest_sim >= threshold:
         print(f"Tier 2 (Semantic Cache) hit! Similarity: {highest_sim:.4f}")
         return best_match["answer"], best_match["sources"]
@@ -52,9 +49,7 @@ def get_semantic_cache(
 def set_semantic_cache(query: str, namespace: str, answer: str, sources: List):
     if namespace not in _SEMANTIC_CACHE:
         _SEMANTIC_CACHE[namespace] = []
-        
     query_emb = get_embedding(query)
-    
     _SEMANTIC_CACHE[namespace].append({
         "query": query,
         "embedding": query_emb,

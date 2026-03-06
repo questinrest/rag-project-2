@@ -10,6 +10,5 @@ def get_exact_cache(query: str, namespace: str) -> Optional[Tuple[str, List]]:
 def set_exact_cache(query: str, namespace: str, answer: str, sources: List):
     if namespace not in _EXACT_CACHE:
         _EXACT_CACHE[namespace] = {}
-        
     _EXACT_CACHE[namespace][query.strip().lower()] = (answer, sources)
     print(f"Tier 1 (Exact Cache) set for query '{query}' in namespace '{namespace}'")

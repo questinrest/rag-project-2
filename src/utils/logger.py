@@ -3,11 +3,11 @@ import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-# Create logs directory if it doesn't exist
+# creating logs directory if does not
 LOG_DIR = Path("logs")
 LOG_DIR.mkdir(exist_ok=True)
 
-# Central log formatter
+#formater
 formatter = logging.Formatter(
     "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S"
@@ -21,16 +21,14 @@ def get_logger(module_name: str) -> logging.Logger:
     logger = logging.getLogger(module_name)
     logger.setLevel(logging.INFO)
 
-    # Avoid duplicate logs if get_logger is called multiple times
+    # Avoid duplicate logs
     if logger.handlers:
         return logger
 
-    # 1. Console Handler (stdout)
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
 
-    # 2. File Handler - Main App Log (rotates at 5MB, keeps 3 backups)
     file_handler = RotatingFileHandler(
         LOG_DIR / "app.log",
         maxBytes=5 * 1024 * 1024,
@@ -40,8 +38,6 @@ def get_logger(module_name: str) -> logging.Logger:
     file_handler.setFormatter(formatter)
     file_handler.setLevel(logging.INFO)
     logger.addHandler(file_handler)
-
-    # 3. File Handler - Errors only
     error_handler = RotatingFileHandler(
         LOG_DIR / "error.log",
         maxBytes=5 * 1024 * 1024,
