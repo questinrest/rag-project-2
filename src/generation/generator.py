@@ -34,22 +34,59 @@ References:
 """
 
 
-def context_build(retrieved_chunks: List[Dict]) -> str:
-    sections = []
-    for idx, chunk in enumerate(retrieved_chunks):
-        chunk_text = chunk.get("chunk_text", "")
-        page = chunk.get("page", "")
-        source = chunk.get("source", "unknown")
+from src.config import parent_store_collection
 
-        page_label = f", p.{page}" if page else ""
-        sections.append(f"[{idx}] (source: {source}{page_label})\n{chunk_text}")
+def context_build(retrieved_chunks: List[Dict], namespace: str) -> str:
+    sections = []
+    
+    # Extract unique parent IDs
+    parent_ids = set()
+    for chunk in retrieved_chunks:
+        parent_id = chunk.get("parent_id")
+        if parent_id:
+            parent_ids.add(parent_id)
+            
+    # Retrieve unique parent chunks from MongoDB
+    if parent_ids:
+        parent_docs = parent_store_collection.find({
+            "parent_id": {"$in": list(parent_ids)},
+            "namespace": namespace
+        })
+        
+        # Create a lookup for quick access
+        parent_lookup = {doc["parent_id"]: doc["text"] for doc in parent_docs}
+        
+        # Build context using unique parent chunks
+        for idx, parent_id in enumerate(parent_lookup):
+            parent_text = parent_lookup[parent_id]
+            # Try to find a source/page from the child chunks that match this parent
+            source = "unknown"
+            page = ""
+            for chunk in retrieved_chunks:
+                if chunk.get("parent_id") == parent_id:
+                    source = chunk.get("source", "unknown")
+                    page = chunk.get("page", "")
+                    break
+                    
+            page_label = f", p.{page}" if page else ""
+            sections.append(f"[{idx}] (source: {source}{page_label})\n{parent_text}")
+            
+    # Fallback to child chunks if no parent IDs were found (e.g. recursive_character chunking)
+    if not sections:
+        for idx, chunk in enumerate(retrieved_chunks):
+            chunk_text = chunk.get("chunk_text", "")
+            page = chunk.get("page", "")
+            source = chunk.get("source", "unknown")
+
+            page_label = f", p.{page}" if page else ""
+            sections.append(f"[{idx}] (source: {source}{page_label})\n{chunk_text}")
 
     return "\n\n".join(sections)
 
 
 @traceable(run_type="chain", name="Generate Final Answer")
-def generate_answer(query: str, chunks: List[Dict]) -> str:
-    context = context_build(chunks)
+def generate_answer(query: str, chunks: List[Dict], namespace: str) -> str:
+    context = context_build(chunks, namespace)
     messages = [
         ("system", SYSTEM_PROMPT),
         ("human", f"Context:\n{context}\n\n---\nQuestion: {query}"),

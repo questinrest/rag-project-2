@@ -52,6 +52,8 @@ async def upload_document(
         records, parents = parent_child_ingest(file_path)
     source_hash = records[0]["source_hash_value"]
 
+    from src.config import parent_store_collection
+    
     # Check for existing document in MongoDB
     existing_doc = document_collection.find_one({
         "namespace": namespace,
@@ -88,6 +90,20 @@ async def upload_document(
         "is_active": True
     }
     document_collection.insert_one(doc_record)
+
+    # Store parents in MongoDB if parent_child strategy
+    if CHUNKING_STRATEGY == "parent_child" and parents:
+        logger.info(f"Storing {len(parents)} parent chunks into MongoDB for document '{document_id}'")
+        parent_records = []
+        for parent_id, parent_text in parents.items():
+            parent_records.append({
+                "parent_id": parent_id,
+                "text": parent_text,
+                "namespace": namespace,
+                "document_id": document_id
+            })
+        if parent_records:
+            parent_store_collection.insert_many(parent_records)
 
     # Upsert with document_id
     logger.info(f"Upserting {len(records)} chunks into Pinecone namespace '{namespace}'")

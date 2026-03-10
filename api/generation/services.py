@@ -22,5 +22,5 @@ def build_sources(chunks: List[Dict]) -> List[Source]:
     return sources
 
 
-def get_answer(query: str, chunks: List[Dict]) -> str:
-    return generate_answer(query=query, chunks=chunks)
+def get_answer(query: str, chunks: List[Dict], namespace: str) -> str:
+    return generate_answer(query=query, chunks=chunks, namespace=namespace)

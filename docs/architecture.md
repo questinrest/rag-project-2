@@ -28,12 +28,12 @@ flowchart TD
     
     %% Caches
     Tier1["Tier 1 Cache: Exact\n(In-Memory Dict)"]
-    Tier2["Tier 2 Cache: Semantic\n(In-Memory Dict)"]
-    Tier3["Tier 3 Cache: Retrieval\n(In-Memory Dict)"]
+    Tier2["Tier 2 Cache: Semantic\n(In-Memory Dict)\nComputes Embedding"]
+    Tier3["Tier 3 Cache: Retrieval\n(In-Memory Dict)\nRe-uses Embedding"]
     
     %% Storage & external
-    Mongo[("MongoDB\n(Active Doc IDs)")]
-    Pinecone[("Pinecone\n(Vector DB)")]
+    Mongo["MongoDB\n(Active Doc IDs & Parent Chunks)"]
+    Pinecone[("Pinecone\n(Vector DB Child Chunks)")]
     Reranker["Reranker\n(bge-reranker-v2-m3)"]
     LLM["LLM Generation\n(Groq: llama-3.3-70b)"]
     Response["QueryResponse"]
@@ -46,23 +46,24 @@ flowchart TD
     Tier1 -->|Miss| Tier2
     Tier1 -->|Hit| Response
     
-    Tier2 -->|Miss| Tier3
+    Tier2 -->|Miss + Query Emb| Tier3
     Tier2 -->|Hit| Response
     
     Tier3 -->|Hit| LLM
     Tier3 -->|Miss| Mongo
     
     Mongo -->|Fetch Active IDs| Pinecone
-    Pinecone -->|Retrieve Chunks| Reranker
+    Pinecone -->|Retrieve Children| Reranker
     
-    Reranker -->|Top N| Tier3
-    Reranker --> LLM
+    Reranker -->|Top N Children| Tier3
+    Reranker -->|Fetch Parent Context| Mongo
+    Mongo -->|Unique Parent Chunks| LLM
     
     LLM --> Response
     
     %% Populate Caches (backflow)
     Response -.->|Populate| Tier1
-    Response -.->|Populate| Tier2
+    Response -.->|Populate w/ Emb| Tier2
 
     %% Tracing
     API -.->|Traces| LangSmith
@@ -107,11 +108,11 @@ Tracing a single query through the entire system:
 The system supports two configurable chunking strategies, set via `CHUNKING_STRATEGY` in the configuration.
 
 ### 1. Parent-Child Chunking
-- **How it works:** Documents are first split into larger "parent" chunks and then sub-divided into smaller "child" chunks. Only the child chunks are vectorized and embedded into Pinecone, but they carry a `parent_id` in their metadata.
+- **How it works:** Documents are first split into larger "parent" chunks and then sub-divided into smaller "child" chunks. The full "parent" chunks are stored in MongoDB (`parent_store`). Only the child chunks are vectorized and embedded into Pinecone, but they carry a `parent_id` in their metadata.
 - **Parameters:**
   - `PARENT_CHUNK_SIZE` = 1000, `PARENT_CHUNK_OVERLAP` = 200
   - `CHILD_CHUNK_SIZE` = 200, `CHILD_CHUNK_OVERLAP` = 20
-- **Metadata Linking:** Each parent gets a unique `parent_id` (e.g., `hash-parent-1`). Children retain this `parent_id` in their metadata so that the broader parent context can be reconstructed or referenced when a child matches a query.
+- **Metadata Linking:** Each parent gets a unique `parent_id` (e.g., `hash-parent-1`). Children retain this `parent_id` in their metadata. During inference, if child chunks are retrieved, their unique `parent_id`s are used to query MongoDB for the broader parent context, which is then supplied to the LLM instead of the individual small child chunks.
 
 ### 2. Recursive Character Chunking (Baseline)
 - **How it works:** A single-pass approach that splits text into uniform sizes with a sliding overlap window using Langchain's `RecursiveCharacterTextSplitter`.
@@ -122,13 +123,13 @@ The system supports two configurable chunking strategies, set via `CHUNKING_STRA
 
 ### Comparison & Usage
 - Use **Recursive Character** for general-purpose retrieval where facts are localized and the answer fits nicely into a ~500 token window.
-- Use **Parent-Child** when queries require broader context to answer. It allows the system to retrieve highly specific matching vectors (small child chunks) but potentially supply the LLM with the larger encompassing section (the parent chunk), improving LLM comprehension.
+- Use **Parent-Child** when queries require broader context to answer. It allows the system to retrieve highly specific matching vectors (small child chunks) but supplies the LLM with the larger encompassing section (the parent chunk), significantly improving LLM comprehension.
 
 ---
 
 ## Caching Architecture
 
-The multi-tier caching system intercepts redundant queries to minimize latency and API costs.
+The multi-tier caching system intercepts redundant queries to minimize latency, API, and compute costs. A key optimization is that **the query embedding is computed strictly once** during the Semantic Cache tier evaluation, and the same NumPy array is passed down through the rest of the verification pipeline to avoid parallel or duplicate invocations to `sentence-transformers`.
 
 ### Tier Implementation details
 1. **Tier 1: Exact Cache** (`src/caching/exact_cache.py`)
@@ -136,10 +137,10 @@ The multi-tier caching system intercepts redundant queries to minimize latency a
    - **Mechanism:** O(1) dictionary lookup on exact match.
 2. **Tier 2: Semantic Cache** (`src/caching/semantic_cache.py`)
    - **Data stored:** Query string, `all-MiniLM-L6-v2` embedding array, answer string, and sources list.
-   - **Mechanism:** Iterates over cached items, computes cosine similarity, and hits if `sim >= SEMANTIC_CACHE_THRESHOLD` (0.92).
+   - **Mechanism:** Computes the query embedding once. Iterates over cached items, computes cosine similarity, and hits if `sim >= SEMANTIC_CACHE_THRESHOLD` (0.92). If it misses, it returns the generated query embedding array.
 3. **Tier 3: Retrieval Cache** (`src/caching/retrieval_cache.py`)
    - **Data stored:** Query string, `all-MiniLM-L6-v2` embedding array, and **retrieved chunks list**.
-   - **Mechanism:** Iterates over cached items, computes cosine similarity, and returns context chunks if `sim >= RETRIEVAL_CACHE_THRESHOLD` (0.85). Prevents redundant Vector DB queries.
+   - **Mechanism:** Takes in the previously computed query embedding. Iterates over cached items, computes cosine similarity, and returns context chunks if `sim >= RETRIEVAL_CACHE_THRESHOLD` (0.85). Prevents redundant Vector DB queries.
 
 ### Cache Invalidation & Parameters
 - **Invalidation Strategy (Manual / Ephemeral):** Currently, there is **no automated cache invalidation** (no TTL or LRU). The cache simply grows indefinitely in memory. Invalidation requires manually restarting the application.

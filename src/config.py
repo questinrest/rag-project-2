@@ -15,9 +15,10 @@ DATABASE_NAME = "TierRAG"
 db = client[DATABASE_NAME]
 login_collection = db['devlogins']
 document_collection = db['document_collection']
+parent_store_collection = db['parent_store']
 
 # JWT Auth
-SECRET_KEY = os.getenv("SECRET_KEY", "b0954062d03562f160495c9263993d2f425c84e627a1c20a33ff18a602f56bdc")
+SECRET_KEY = os.getenv("SECRET_KEY")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -50,7 +51,7 @@ CHILD_CHUNK_OVERLAP : int = int(os.getenv("CHILD_CHUNK_OVERLAP", 20))
 
 # Recursive Character Chunking
 CHUNK_SIZE : int = int(os.getenv("CHUNK_SIZE", 512))
-CHUNK_OVERLAP : int = int(os.getenv("PARENT_CHUNK_SIZE", 100))
+CHUNK_OVERLAP : int = int(os.getenv("CHUNK_OVERLAP", 100))
 
 # LLM (Groq)
 GROQ_API_KEY : str = os.getenv("GROQ_API_KEY")

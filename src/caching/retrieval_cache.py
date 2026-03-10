@@ -2,6 +2,9 @@ import numpy as np
 from typing import Dict, Optional, List
 from src.caching.semantic_cache import get_embedding, cosine_similarity
 from src.config import RETRIEVAL_CACHE_THRESHOLD
+from src.utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 _RETRIEVAL_CACHE: Dict[str, List[Dict]] = {} # structure: { namespace: [ { "query": str, "embedding": np.ndarray, "chunks": List[Dict] } ] }
 
@@ -9,12 +12,12 @@ _RETRIEVAL_CACHE: Dict[str, List[Dict]] = {} # structure: { namespace: [ { "quer
 def get_retrieval_cache(
     query: str, 
     namespace: str, 
+    query_emb: np.ndarray,
     threshold: float = RETRIEVAL_CACHE_THRESHOLD
 ) -> Optional[List[Dict]]:
     namespace_cache = _RETRIEVAL_CACHE.get(namespace, [])
     if not namespace_cache:
         return None
-    query_emb = get_embedding(query)
 
     best_match = None
     highest_sim = -1.0
@@ -32,15 +35,16 @@ def get_retrieval_cache(
     return None
 
 
-def set_retrieval_cache(query: str, namespace: str, chunks: List[Dict]):
+def set_retrieval_cache(query: str, namespace: str, chunks: List[Dict], query_emb: np.ndarray = None):
     if namespace not in _RETRIEVAL_CACHE:
         _RETRIEVAL_CACHE[namespace] = []
         
-    query_emb = get_embedding(query)
+    if query_emb is None:
+        query_emb = get_embedding(query)
     
     _RETRIEVAL_CACHE[namespace].append({
         "query": query,
         "embedding": query_emb,
         "chunks": chunks
     })
-    print(f"Tier 3 (Retrieval Cache) set for retrieved chunks in namespace '{namespace}'")
+    logger.info(f"Tier 3 (Retrieval Cache) set for retrieved chunks in namespace '{namespace}'")
